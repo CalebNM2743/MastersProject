@@ -3,7 +3,11 @@ title: "TestRun"
 output: pdf_document
 ---
 
-#0. Set-Up
+This is my first try/test run to really bang through the code to make sure it works with a sample of Bradshaw district before I commit to using it for ALL the data across the three forests.
+
+###0. Set-Up
+
+Setting up the libraries I think I'll need for now.
 
 ```{r}
 library(tidyverse)
@@ -11,7 +15,9 @@ library(readxl)
 library(readr)
 ```
 
-#I. Read In Data
+###I. Read In Data
+
+Gotta bring in the data I need. I brought in the Frequency and Point Ground Cover data, not necessarily because I think I'll need it, but I might. Either way, good practice for me. VGS gives us a straight XLSX doc, which can be a bit unwieldy, so I'm going to pull specific sheets of data out, which should be specific to my protocol, and then convert them to CSVs.
 
 ```{r}
 XLSXPath <- "RawDataTest/TestRunBradshaw.xlsx"
@@ -29,3 +35,131 @@ write_csv(Freq, "RawDataTest/Freq.csv")
 write_csv(PGC, "RawDataTest/PGC.csv")
 write_csv(Cover, "RawDataTest/Cover.csv")
 ```
+
+Looks like I'm getting warnings because of what looks like someone using a qualifier. Doesn't seem to cause any problems (yet), so I'm going to keep chugging along.
+
+###II. Clean Data
+
+BOOOOOO I hate this part. But I have to, and luckily I already made a function for this in EnviroStats a few months ago. From here, I'm going to get only the columns I need, and rename them. I'm going to include the addition of ProtocolType to at least my cover databases because of the 1/10 acres being stored by their event type, so I'm going to have to pull those out.
+
+```{r}
+SqueakyClean <- function(df) {
+  CleanData <- df %>%
+    select(Date, Ancestry, SiteID, SpeciesSymbol, SpeciesName, CommonName, SampleNumber, nValue, DDLat, DDLong) %>% 
+    rename(Rank = nValue,
+           Lat = DDLat,
+           Lon = DDLong)
+  return(CleanData)}
+
+#This function should theoretically clean all the data. Probably going to mess up on the Tenth Acre
+
+CleanHerbOnlyDWR <- SqueakyClean(HerbOnlyDWR)
+CleanRegDWR <- SqueakyClean(RegDWR)
+
+#As expected, there is a slight hiccup with the cover data so I'm modifying the function for it. Should just have to add the ProtocolType selection and also change nValue from Rank to Cover
+
+AbsolutelySpotless <- function(df) {
+  CleanData <- df %>%
+    select(ProtocolType, Date, Ancestry, SiteID, SpeciesSymbol, SpeciesName, CommonName, SampleNumber, nValue, DDLat, DDLong) %>% 
+    rename(Cover = nValue,
+           Lat = DDLat,
+           Lon = DDLong)
+  return(CleanData)}
+
+CleanCover <- AbsolutelySpotless(Cover)
+```
+
+###III. Getting Comp
+
+Alrighty, now I have to get some Composition, lets see if I can replicate the process from my last project. This time, I'm going to have to do it twice per regular DWR and herbaceous DWR.
+
+First, I have to count how much each rank was counted.
+
+```{r}
+
+RealRankHerbOnlyDWR <- CleanHerbOnlyDWR %>% 
+  group_by(Ancestry, SiteID, Lat, Lon, Date, SpeciesSymbol, Rank) %>% 
+  summarize(RankCount = n())
+
+RealRankRegDWR <- CleanRegDWR %>% 
+  group_by(Ancestry, SiteID, Lat, Lon, Date, SpeciesSymbol, Rank) %>% 
+  summarize(RankCount = n())
+
+```
+
+Sweet, that worked great, now I'm going to move the Rank values from their rank to the value those ranks represent (1 = 7, 2 = 2, 3 = 1).
+
+```{r}
+RealRankHerbOnlyDWR <- RealRankHerbOnlyDWR %>% 
+  mutate(Rank = case_when(
+    Rank == 1 ~ 7,
+    Rank == 3 ~ 1, #Decided not to bother typing in Rank == 2 ~ 2
+    TRUE ~ Rank
+  ))
+
+RealRankRegDWR <- RealRankRegDWR %>% 
+  mutate(Rank = case_when(
+    Rank == 1 ~ 7,
+    Rank == 3 ~ 1,
+    TRUE ~ Rank
+  ))
+```
+
+Important part of the whole process, I have to figure out how many total frames were read for each site. This is extremely important and will justify an extra dataframe, because since herbaceous only DWR only has perennial grasses and forbs to the exclusion of woody species and most annual plants, even the same event will have different numbers of regular DWR frames and herb only frames.
+
+```{r}
+CountedHerbOnlyDWR <- RealRankHerbOnlyDWR %>% 
+  group_by(Ancestry, SiteID) %>% 
+  summarize(SiteTotalFrames = sum(RankCount)/3) %>% 
+  ungroup()
+
+CountedRegDWR <- RealRankRegDWR %>% 
+  group_by(Ancestry, SiteID) %>% 
+  summarize(SiteTotalFrames = sum(RankCount)/3) %>% 
+  ungroup()
+```
+
+Finally, we get to start making the composition, by multiplying Rank * RankCount and then adding the SiteTotalFrames and eventually Composition
+
+```{r}
+#First step, get the Rank*RankCount
+
+HerbOnlyComp <- RealRankHerbOnlyDWR %>% 
+  group_by(Ancestry, SiteID, Lon, Lat, Date, SpeciesSymbol) %>% 
+  summarize(PreComp = Rank*RankCount) #PreComp is just the name I have for the value of Rank*RankCount
+
+RegComp <- RealRankRegDWR %>% 
+  group_by(Ancestry, SiteID, Lon, Lat, Date, SpeciesSymbol) %>% 
+  summarize(PreComp = Rank*RankCount)
+
+#Now I'm going to add the SiteTotalFrames to the dataframe
+
+HerbOnlyComp <- full_join(HerbOnlyComp, CountedHerbOnlyDWR, join_by(Ancestry, SiteID))
+
+RegComp <- full_join(RegComp, CountedRegDWR, join_by(Ancestry, SiteID))
+
+#Finally, we get actual Composition
+
+HerbOnlyComp <- HerbOnlyComp %>% 
+  group_by(Ancestry, SiteID, Lon, Lat, Date, SpeciesSymbol, SiteTotalFrames) %>% 
+  summarize(Composition = sum(PreComp))
+
+HerbOnlyComp$Composition <- 10*HerbOnlyComp$Composition/HerbOnlyComp$SiteTotalFrames
+
+RegComp <- RegComp %>% 
+  group_by(Ancestry, SiteID, Lon, Lat, Date, SpeciesSymbol, SiteTotalFrames) %>% 
+  summarize(Composition = sum(PreComp))
+
+RegComp$Composition <- 10*RegComp$Composition/RegComp$SiteTotalFrames
+
+```
+
+Finally, I have to save these as CSVs so that I don't lose them.
+
+```{r}
+write_csv(HerbOnlyComp, "CleanDataTest/HerbOnlyComp.csv")
+write_csv(RegComp, "CleanDataTest/RegComp.csv")
+```
+
+WHOOF I did it. Made a single dataframe with composition. Only need to make A LOT MORE FOR ALL THREE FORESTS.
+
