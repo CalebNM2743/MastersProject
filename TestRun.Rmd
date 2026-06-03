@@ -1,5 +1,31 @@
 ---
 title: "TestRun"
-output: html_document
+output: pdf_document
 ---
 
+#0. Set-Up
+
+```{r}
+library(tidyverse)
+library(readxl)
+library(readr)
+```
+
+#I. Read In Data
+
+```{r}
+XLSXPath <- "RawDataTest/TestRunBradshaw.xlsx"
+
+HerbOnlyDWR <- read_excel(XLSXPath, sheet = 1) #Herbaceous-Only Dry-Weight Rank
+RegDWR <- read_excel(XLSXPath, sheet = 2) #Regular DWR
+Freq <- read_excel(XLSXPath, sheet = 3) #Frequency
+PGC <- read_excel(XLSXPath, sheet = 4) #Point Ground Cover
+Cover <- read_excel(XLSXPath, sheet = "cover frequency (by quadrat) (c") #Canopy Cover-Frequency to be exact. Split between the PNF Gap protocol and the Tenth Acre protocol, so this will have to be broken down further.
+
+#Reading all of the data into usable CSVs
+write_csv(HerbOnlyDWR, "RawDataTest/HerbOnlyDWR.csv")
+write_csv(RegDWR, "RawDataTest/RegDWR.csv")
+write_csv(Freq, "RawDataTest/Freq.csv")
+write_csv(PGC, "RawDataTest/PGC.csv")
+write_csv(Cover, "RawDataTest/Cover.csv")
+```
