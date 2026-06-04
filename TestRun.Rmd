@@ -163,3 +163,50 @@ write_csv(RegComp, "CleanDataTest/RegComp.csv")
 
 WHOOF I did it. Made a single dataframe with composition. Only need to make A LOT MORE FOR ALL THREE FORESTS.
 
+Found out today that VGS is running out of funding in Sept :( not good.
+
+###IV. Getting Cover
+
+After doing some thinking, I have decided that I think I only need the data from Tenth Acre, and not the ones from PNF Gap, because PNF Gap will probably not have any composition to go with it. Tenth Acre is also the method we used for each method anyways, so we will continue with that.
+
+So, what do I need? Really, only juniper cover. How do I do that? I imagine first I will have to select only data that is read with Tenth Acre. Then I will have to select only juniper cover, and then probably join that with the composition data frames so that I can compare them. I think.
+
+Alright Step 1: select only Tenth Acre data.
+
+```{r}
+CleanCover <- filter(CleanCover, ProtocolType == "USFS R3 Tenth Acre")
+```
+
+OOF I just realized that we have recorded multiple different types of juniper codes, it could be JUNIP, JUOS, JUDE2, or JUMO. Whelp. I think I will have to figure out how to find them, and then combine them per site under JUNIP. 
+
+Okee dokee I guess I'm doing that.
+
+```{r}
+#Filter out to only Juniperus spp.
+
+CleanCover <- filter(CleanCover, SpeciesSymbol == "JUNIP" | SpeciesSymbol == "JUOS" | SpeciesSymbol == "JUMO" | SpeciesSymbol == "JUDE2")
+
+#Combine them all under JUNIP code.
+
+CleanerCover <- CleanCover %>% 
+  group_by(ProtocolType, Ancestry, SiteID, Lat, Lon, Date) %>% 
+  summarize(JunipCover = sum(Cover)) %>% 
+  ungroup()
+
+```
+
+It worked, that's great. Lets see if I can add it to the Comps
+
+```{r}
+HerbOnlyComp <- full_join(HerbOnlyComp, CleanerCover, join_by(Ancestry, SiteID))
+
+RegComp <- full_join(RegComp, CleanerCover, join_by(Ancestry, SiteID, Lon, Lat, Date))
+
+RegComp
+```
+
+Yippee, i did it. I think now is the time for me to call it and then start analyzing the data.
+
+OR start getting a lot more data.
+
+Ew.
